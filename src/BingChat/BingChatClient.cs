@@ -23,6 +23,11 @@ public sealed class BingChatClient : IBingChattable
         cookies.Add(new Uri("https://www.bing.com"), new Cookie("_U", _options.Cookie));
 
         using var handler = new HttpClientHandler { CookieContainer = cookies };
+        if (!string.IsNullOrWhiteSpace(_options.ProxyUrl))
+        {
+            handler.UseProxy = true;
+            handler.Proxy = new WebProxy(_options.ProxyUrl);
+        }
         using var client = new HttpClient(handler);
         var headers = client.DefaultRequestHeaders;
 

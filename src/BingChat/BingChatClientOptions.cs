@@ -6,4 +6,5 @@ public sealed class BingChatClientOptions
     /// The _U cookie value
     /// </summary>
     public string? Cookie { get; set; }
+    public string? ProxyUrl { get; set; }
 }
