@@ -1,5 +1,4 @@
-﻿using System.Text.Json;
-using System.Text.Json.Serialization;
+﻿using BingChat.Model;
 
 namespace BingChat;
 
@@ -8,86 +7,54 @@ internal sealed class BingChatRequest
     private readonly string _conversationId;
     private readonly string _clientId;
     private readonly string _conversationSignature;
+    private readonly BingChatTone _tone;
     private int _invocationId;
 
-    private static readonly JsonSerializerOptions JsonSerializerOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
-
     internal BingChatRequest(
-        string clientId, string conversationId, string conversationSignature)
+        string clientId, string conversationId, string conversationSignature, BingChatTone tone)
     {
         _clientId = clientId;
         _conversationId = conversationId;
         _conversationSignature = conversationSignature;
+        _tone = tone;
     }
 
     /// <summary>
     /// Construct the initial payload for each message
     /// </summary>
-    internal string ConstructInitialPayload(string message)
+    /// <param name="message">User message to Bing Chat</param>
+    internal ChatRequest ConstructInitialPayload(string message)
     {
-        var bytes = new byte[16];
-        Random.Shared.NextBytes(bytes);
-        var traceId = BitConverter.ToString(bytes).Replace("-", string.Empty).ToLower();
+        var traceId = Utils.GenerateRandomHexString();
 
-        var payload = new
+        var payload = new ChatRequest
         {
-            type = 4,
-            invocationId = _invocationId.ToString(),
-            target = "chat",
-            arguments = new[]
+            Source = "cib",
+            OptionsSets = _tone switch
             {
-                new
-                {
-                    source = "cib",
-                    optionsSets = new[]
-                    {
-                        "nlu_direct_response_filter",
-                        "deepleo",
-                        "enable_debug_commands",
-                        "disable_emoji_spoken_text",
-                        "responsible_ai_policy_235",
-                        "enablemm",
-                        "dlislog"
-                    },
-                    allowedMessageTypes = new[]
-                    {
-                        "Chat",
-                        "InternalSearchQuery",
-                        "InternalSearchResult",
-                        "InternalLoaderMessage",
-                        "RenderCardRequest",
-                        "AdsQuery",
-                        "SemanticSerp"
-                    },
-                    sliceIds = Array.Empty<string>(),
-                    traceId,
-                    isStartOfSession = _invocationId == 0,
-                    message = new
-                    {
-                        // Are these needed?
-                        // locale = ,
-                        // market = ,
-                        // region = ,
-                        // location = ,
-                        // locationHints: [],
-
-                        timestamp = DateTime.Now,
-                        author = "user",
-                        inputMethod = "Keyboard",
-                        messageType = "Chat",
-                        text = message
-                    },
-                    conversationSignature = _conversationSignature,
-                    participant = new { id = _clientId },
-                    conversationId = _conversationId
-                }
-            }
+                BingChatTone.Creative => BingChatConstants.CreativeOptionSets,
+                BingChatTone.Precise => BingChatConstants.PreciseOptionSets,
+                BingChatTone.Balanced or _ => BingChatConstants.BalancedOptionSets
+            },
+            AllowedMessageTypes = BingChatConstants.AllowedMessageTypes,
+            SliceIds = Array.Empty<string>(),
+            TraceId = traceId,
+            IsStartOfSession = _invocationId == 0,
+            Message = new RequestMessage
+            {
+                Timestamp = DateTime.Now,
+                Author = "user",
+                InputMethod = "Keyboard",
+                MessageType = "Chat",
+                Text = message
+            },
+            Tone = _tone.ToString(),
+            ConversationSignature = _conversationSignature,
+            Participant = new() { Id = _clientId },
+            ConversationId = _conversationId
         };
+
         _invocationId++;
-        return JsonSerializer.Serialize(payload, JsonSerializerOptions);
+        return payload;
     }
 }

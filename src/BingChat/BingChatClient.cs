@@ -1,5 +1,8 @@
 ﻿using System.Net;
 using System.Net.Http.Json;
+using System.Runtime.CompilerServices;
+using System.Text.Json.Nodes;
+using System.Web;
 
 namespace BingChat;
 
@@ -15,12 +18,55 @@ public sealed class BingChatClient : IBingChattable
     /// <summary>
     /// Create a chat conversation, so we can chat multiple times in the same context.
     /// </summary>
-    public async Task<IBingChattable> CreateConversation()
+    public async Task<BingChatConversation> CreateConversation()
     {
         var requestId = Guid.NewGuid();
 
         var cookies = new CookieContainer();
-        cookies.Add(new Uri("https://www.bing.com"), new Cookie("_U", _options.Cookie));
+        if (!string.IsNullOrEmpty(_options.CookieU))
+        {
+            cookies.Add(new Uri("https://www.bing.com"), new Cookie("_U", _options.CookieU));
+        }
+
+        if (!string.IsNullOrEmpty(_options.CookieKievRPSSecAuth))
+        {
+            cookies.Add(new Uri("https://www.bing.com"),
+                new Cookie("KievRPSSecAuth", HttpUtility.UrlEncode(_options.CookieKievRPSSecAuth)));
+        }
+
+        if (!string.IsNullOrEmpty(_options.CookieFilePath))
+        {
+            //Read cookie file
+            try
+            {
+                JsonNode? cookieJson = JsonNode.Parse(File.ReadAllText(_options.CookieFilePath));
+                cookies = new CookieContainer();
+                foreach (var cookieItemJson in (JsonArray)cookieJson!)
+                {
+                    if (cookieItemJson is null)
+                        continue;
+                    var domain = (string?)cookieItemJson["domain"];
+                    var path = (string?)cookieItemJson["path"];
+                    var name = (string?)cookieItemJson["name"];
+                    var value = (string?)cookieItemJson["value"];
+                    if (string.IsNullOrEmpty(domain) ||
+                        string.IsNullOrEmpty(path) ||
+                        string.IsNullOrEmpty(name) ||
+                        string.IsNullOrEmpty(value))
+                        continue;
+                    cookies.Add(new Uri("https://www.bing.com"),
+                        new Cookie(name, HttpUtility.UrlEncode(value), path, domain));
+                }
+            }
+            catch
+            {
+                throw new BingChatException("The format of the cookie file is not supported. " +
+                                            "PLease install \"Cookie Editor\" and export cookies in JSON format.");
+            }
+        }
+
+        if (cookies.Count == 0)
+            cookies.Add(new Uri("https://www.bing.com"), new Cookie("_U", Utils.GenerateRandomHexString()));
 
         using var handler = new HttpClientHandler { CookieContainer = cookies };
         if (!string.IsNullOrWhiteSpace(_options.ProxyUrl))
@@ -51,8 +97,9 @@ public sealed class BingChatClient : IBingChattable
         headers.Add("referer", "https://www.bing.com/search");
         headers.Add("referer-policy", "origin-when-cross-origin");
 
-        var response = await client.GetFromJsonAsync<BingCreateConversationResponse>(
-            "https://www.bing.com/turing/conversation/create");
+        var response = await client.GetFromJsonAsync(
+            "https://www.bing.com/turing/conversation/create",
+            SerializerContext.Default.BingCreateConversationResponse);
 
         if (response!.Result is { } errResult &&
             !errResult.Value.Equals("Success", StringComparison.OrdinalIgnoreCase))
@@ -65,18 +112,36 @@ public sealed class BingChatClient : IBingChattable
             throw new BingChatException(message);
         }
 
-        return new BingChatConversation(
-            response.ClientId, response.ConversationId, response.ConversationSignature);
+        return new(
+            response.ClientId,
+            response.ConversationId,
+            response.ConversationSignature,
+            _options.Tone);
     }
 
     /// <summary>
     /// Create a one-shot conversation and ask in it. The conversation will be discarded after the operation.<br/>
     /// If you want to share the same context with multiple chat messages, use <see cref="CreateConversation"/> to create a shared conversation. 
     /// </summary>
-    public async Task<string> AskAsync(string message)
+    public async Task<string> AskAsync(string message, CancellationToken ct = default)
     {
         var conversation = await CreateConversation();
-        return await conversation.AskAsync(message);
+        return await conversation.AskAsync(message, ct);
+    }
+
+    /// <summary>
+    /// Create a one-shot conversation and ask in it. The conversation will be discarded after the operation.<br/>
+    /// If you want to share the same context with multiple chat messages, use <see cref="CreateConversation"/> to create a shared conversation.
+    /// </summary>
+    /// <returns>
+    /// Asynchronous stream consisting of response text words.
+    /// </returns>
+    public async IAsyncEnumerable<string> StreamAsync(
+        string message, [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var conversation = await CreateConversation();
+        await foreach (var word in conversation.StreamAsync(message, ct))
+            yield return word;
     }
 }
 
@@ -88,7 +153,7 @@ internal sealed class BingCreateConversationResponse
         public string Message { get; set; } = null!;
     }
 
-    public CreateConversationResult? Result { get; set; } = null;
+    public CreateConversationResult? Result { get; set; }
 
     public string ConversationId { get; set; } = null!;
     public string ClientId { get; set; } = null!;

@@ -1,6 +1,6 @@
 ﻿<div align="center">
 
-![Socialify Banner](https://socialify.git.ci/b1acksoil/BingChat/image?font=Inter&language=1&logo=https%3A%2F%2Fupload.wikimedia.org%2Fwikipedia%2Fcommons%2F9%2F9c%2FBing_Fluent_Logo.svg&name=1&owner=1&pattern=Circuit%20Board&theme=Auto&description=1)
+![Socialify Banner](https://socialify.git.ci/bsdayo/BingChat/image?font=Inter&language=1&logo=https%3A%2F%2Fupload.wikimedia.org%2Fwikipedia%2Fcommons%2F9%2F9c%2FBing_Fluent_Logo.svg&name=1&owner=1&pattern=Circuit%20Board&theme=Auto&description=1)
 
 # BingChat
 
@@ -16,24 +16,23 @@
 > This library is **unofficial** and heavily depends on reverse-engineering. Use at your own risk.
 
 - [BingChat](#bingchat)
-  - [Quick Start](#quick-start)
-  - [Interactive Command Line Tool](#interactive-command-line-tool)
-  - [Roadmap](#roadmap)
-  - [Contributors](#contributors)
-  - [License](#license)
+    - [Quick Start](#quick-start)
+    - [Interactive Command Line Tool](#interactive-command-line-tool)
+    - [Roadmap](#roadmap)
+    - [Q\&A](#qa)
+    - [Contributors](#contributors)
+    - [License](#license)
 
 ## Quick Start
 
 > **Note**
-> You need a valid cookie from someone who has access to the new Bing Chat.
->
-> To get it, you can go to [www.bing.com](https://www.bing.com), log in an account which has access, and then open the Developer Tools (F12) > Application Tab > Storage > Cookies, find the cookie named `_U`, and
-> copy its value.
+> Since BingChat's public release, a valid cookie is no longer required. You can use this package without any
+> authentication.
 
 Install this package via NuGet package manager or dotnet CLI:
 
 ```
-dotnet add package BingChat 
+dotnet add package --prerelease BingChat
 ```
 
 Then,
@@ -44,8 +43,8 @@ using BingChat;
 // Construct the chat client
 var client = new BingChatClient(new BingChatClientOptions
 {
-    // The "_U" cookie's value
-    Cookie = cookie
+    // Tone used for conversation
+    Tone = BingChatTone.Balanced,
 });
 
 var message = "Do you like cats?";
@@ -76,27 +75,81 @@ Console.WriteLine($"Second answer: {answer}");
 ```
 
 ## Interactive Command Line Tool
+
 We also developed an amazing command line tool for you! See the preview below:
 
 ![CLI Preview](./assets/cli-screenshot.png)
 
-To use it, first set the environment variable `BING_COOKIE` to your cookie value, as talked above.
-
-> **Note**
-> We are still considering the way to handle the cookie, maybe in the future it will be stored in a config file, or provided with a command option.  
-> If you have any idea, feel free to share with us by opening an issue.
-
-Then clone this repository, and execute the following commands in the repository root:
+You can install the CLI by executing the following command simply:
 
 ```shell
-$ dotnet run --project src/BingChat.Cli/BingChat.Cli.csproj
+dotnet tool install -g --prerelease dotnet-bingchat
+```
+
+Then start the CLI:
+
+```shell
+dotnet bingchat
 ```
 
 ## Roadmap
 
-- [x] Implement a command line tool to interact with Bing Chat.
-- [ ] Provide a way to get the full result, like adaptive cards.
-- [ ] Add ability to set timeout.
+- [x] Implement a command line tool to interact with Bing Chat
+- [x] Provide a way to get the full result, like adaptive cards
+- [x] Add ability to set timeout
+- [x] Publish CLI as dotnet tool
+- [ ] Validate that connectivity issues are gone after switching to SignalR
+- [ ] Research OptionSet specifics, analyze whether switching to `harmonyv3` enables the older model which has better
+  performance
+- [ ] Expose rich response object via `.SendAsync(..)` to allow detailed access and control over the conversation state
+
+## Q&A
+
+### Set your own cookie
+
+You can set your own cookie to interact with BingChat server, instead of generating a random one.
+
+To get it, you can go to [www.bing.com](https://www.bing.com), log in an account which has access, and then open the
+Developer Tools (F12) > Application Tab > Storage > Cookies, find the cookie named `_U`, and
+copy its value. Then pass it to the `BingChatClientOptions`' constructor.
+
+### UnauthorizedRequest Exception
+
+<details>
+<summary>Solution</summary>
+
+There are multiple reasons. You may follow these steps to handle the problem.
+
+1. Refresh the webpage, confirm that the '_U' value is up to date and copied correctly, and retry.
+2. If you are using a proxy (VPN), try setting the global proxy, and retry. The code is as follows:
+
+    ```csharp
+    HttpClient.DefaultProxy = new WebProxy("127.0.0.1:8807"); //Your proxy address and port
+    ```
+
+3. Find another cookie named 'KievRPSSecAuth', set its value, and retry. The code is as follows:
+
+    ```csharp
+    var client = new BingChatClient(new BingChatClientOptions {
+        // The "_U" cookie's value
+        CookieU = strU,
+        // The "KievRPSSecAuth" cookie's value
+        CookieKievRPSSecAuth = strKievRPSSecAuth,
+    });
+    ```
+
+4. Open the browser menu > Extensions. Search for 'Cookie Editor' and install it.
+   Go to Bing Chat webpage and export all cookies to to a local file in JSON format.
+   Set file path value as follows (The "_U" and "KievRPSSecAuth" value are not needed at this time):
+
+    ```csharp
+    var client = new BingChatClient(new BingChatClientOptions {
+        // The exported cookie file path
+        CookieFilePath = strFilePath,
+    });
+    ```
+
+</details>
 
 ## Contributors
 
